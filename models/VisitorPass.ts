@@ -1,0 +1,207 @@
+// import mongoose, { Schema, Document, Types } from 'mongoose';
+
+// export interface IVisitorPass extends Document {
+//   name: string;
+//   visitorType: string;
+//   comingFrom: string;
+//   purposeOfVisit: string;
+//   host: string; // keep as string to match your existing form
+//   idType: string;
+//   visitorIdText: string;
+//   passId: string;
+//   visitorId: Types.ObjectId;
+//   phone?: string;
+//   checkInDate: Date;
+//   checkOutDate?: Date | null;
+//   expectedCheckOutTime?: Date;
+//   email?: string;
+//   notes?: string;
+//   photoUrl?: string;
+//   qrCode: string; // used for scanning
+//   status: 'active' | 'checked_in' | 'checked_out' | 'expired';
+
+//  movementHistory: Array<{
+//    timestamp: Date;
+//    type: 'check_in' | 'check_out';
+//    accessPointId?: Types.ObjectId;
+//    accessPointName?: string;
+//    method?: 'mobile' | 'passId' | 'qr' | 'manual' | 'create_with_photo' | 'unknown';
+//    actorUserId?: Types.ObjectId;  // optional, who triggered the scan
+//    notes?: string;
+//  }>;
+
+//   clientId: Types.ObjectId;
+//   createdAt: Date;
+//   updatedAt: Date;
+// }
+
+// const VisitorPassSchema: Schema = new Schema(
+//   {
+//     name: { type: String, required: true, trim: true },
+//     visitorType: { type: String, required: true, trim: true },
+//     comingFrom: { type: String, required: true, trim: true },
+//     purposeOfVisit: { type: String, required: true, trim: true },
+//     host: { type: String, required: true, trim: true },           // ✅ unchanged shape
+//     idType: { type: String, required: true, trim: true },
+//     visitorIdText: { type: String, required: true, trim: true },
+//     passId: { type: String, required: true, trim: true },
+//     visitorId: { type: Schema.Types.ObjectId, ref: 'Visitor', required: true },
+//     phone: { type: String, required: true, trim: true },
+//     checkInDate: { type: Date, required: true },
+//     checkOutDate: { type: Date, default: null },
+//   expectedCheckOutTime: { type: Date },
+//     email: { type: String, lowercase: true, trim: true },
+//     notes: { type: String, trim: true },
+//     photoUrl: { type: String, trim: true },
+//     qrCode: { type: String, required: true, trim: true },
+//     status: {
+//       type: String,
+//       enum: ['active', 'checked_in', 'checked_out', 'expired'],
+//       default: 'active',
+//     },
+//    movementHistory: [
+//      {
+//        timestamp: { type: Date, default: Date.now },
+//        type: { type: String, enum: ['check_in', 'check_out'], required: true },
+//        accessPointId: { type: Schema.Types.ObjectId, ref: 'AccessPoint' },
+//        accessPointName: { type: String },
+//        method: {
+//          type: String,
+//          enum: ['mobile', 'passId', 'qr', 'manual', 'create_with_photo', 'unknown'],
+//          default: 'unknown',
+//        },
+//        actorUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+//        notes: { type: String, trim: true },
+//      },
+//    ],
+//     clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
+//   },
+//   { timestamps: true }
+// );
+
+// // 🔒 Tenant safety + fast queries
+// // Make QR code unique per tenant (or set `{ unique: true }` on qrCode alone for global uniqueness)
+// VisitorPassSchema.index({ clientId: 1, qrCode: 1 }, { unique: true });
+// // Common filters
+// VisitorPassSchema.index({ clientId: 1, status: 1, checkInDate: -1 });
+// VisitorPassSchema.index({ clientId: 1, visitorIdText: 1 });
+// VisitorPassSchema.index({ clientId: 1, passId: 1 });
+// VisitorPassSchema.index({ clientId: 1, createdAt: -1 });
+
+// // Optional: sanity check for date ordering (does not change your fields)
+// VisitorPassSchema.pre('validate', function (next) {
+//   const doc = this as any;
+//   if (doc.checkInDate && doc.checkOutDate && doc.checkOutDate < doc.checkInDate) {
+//     return next(new Error('checkOutDate cannot be earlier than checkInDate'));
+//   }
+//   next();
+// });
+
+// export default mongoose.models.VisitorPass ||
+//   mongoose.model<IVisitorPass>('VisitorPass', VisitorPassSchema);
+
+
+import mongoose, { Schema, Document, Types } from 'mongoose';
+
+export interface IVisitorPass extends Document {
+  name: string;
+  visitorType: string;
+  comingFrom: string;
+  purposeOfVisit: string;
+  host: string;
+  idType: string;
+  visitorIdText: string;
+  passId: string;
+  visitorId: Types.ObjectId;
+  phone?: string;
+  checkInDate: Date;
+  checkOutDate?: Date | null;
+  expectedCheckOutTime?: Date;
+  email?: string;
+  notes?: string;
+  photoUrl?: string;
+  qrCode: string;
+  status: 'active' | 'checked_in' | 'checked_out' | 'expired';
+
+  movementHistory: Array<{
+    timestamp: Date;
+    type: 'check_in' | 'check_out';
+    accessPointId?: Types.ObjectId;
+    accessPointName?: string;
+    method?: 'mobile' | 'passId' | 'qr' | 'manual' | 'create_with_photo' | 'unknown';
+    actorUserId?: Types.ObjectId;
+    notes?: string;
+  }>;
+
+  clientId: Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const MovementEventSchema = new Schema(
+  {
+    timestamp: { type: Date, default: Date.now },
+    type: { type: String, enum: ['check_in', 'check_out'], required: true },
+    accessPointId: { type: Schema.Types.ObjectId, ref: 'AccessPoint' },
+    accessPointName: { type: String },
+    method: {
+      type: String,
+      enum: ['mobile', 'passId', 'qr', 'manual', 'create_with_photo', 'unknown'],
+      default: 'unknown',
+    },
+    actorUserId: { type: Schema.Types.ObjectId, ref: 'User' },
+    notes: { type: String, trim: true },
+  },
+  { _id: false }
+);
+
+const VisitorPassSchema: Schema = new Schema(
+  {
+    name: { type: String, required: true, trim: true },
+    visitorType: { type: String, required: true, trim: true },
+    comingFrom: { type: String, required: true, trim: true },
+    purposeOfVisit: { type: String, required: true, trim: true },
+    host: { type: String, required: true, trim: true },
+    idType: { type: String, required: true, trim: true },
+    visitorIdText: { type: String, required: true, trim: true },
+    passId: { type: String, required: true, trim: true },
+    visitorId: { type: Schema.Types.ObjectId, ref: 'Visitor', required: true },
+    phone: { type: String, required: true, trim: true },
+    checkInDate: { type: Date, required: true },
+    checkOutDate: { type: Date, default: null },
+    expectedCheckOutTime: { type: Date },
+    email: { type: String, lowercase: true, trim: true },
+    notes: { type: String, trim: true },
+    photoUrl: { type: String, trim: true },
+    qrCode: { type: String, required: true, trim: true },
+    status: {
+      type: String,
+      enum: ['active', 'checked_in', 'checked_out', 'expired'],
+      default: 'active',
+    },
+    // ✅ Ensure array is always initialized
+    movementHistory: { type: [MovementEventSchema], default: [] },
+
+    clientId: { type: Schema.Types.ObjectId, ref: 'Client', required: true },
+  },
+  { timestamps: true }
+);
+
+// Indexes
+VisitorPassSchema.index({ clientId: 1, qrCode: 1 }, { unique: true });
+VisitorPassSchema.index({ clientId: 1, status: 1, checkInDate: -1 });
+VisitorPassSchema.index({ clientId: 1, visitorIdText: 1 });
+VisitorPassSchema.index({ clientId: 1, passId: 1 });
+VisitorPassSchema.index({ clientId: 1, createdAt: -1 });
+
+// Validate check-out not before check-in
+VisitorPassSchema.pre('validate', function (next) {
+  const doc = this as any;
+  if (doc.checkInDate && doc.checkOutDate && doc.checkOutDate < doc.checkInDate) {
+    return next(new Error('checkOutDate cannot be earlier than checkInDate'));
+  }
+  next();
+});
+
+export default mongoose.models.VisitorPass ||
+  mongoose.model<IVisitorPass>('VisitorPass', VisitorPassSchema);
