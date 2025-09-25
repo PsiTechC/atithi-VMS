@@ -90,25 +90,36 @@ export function ClientOverview() {
         setTodayCount(getTodayCount(visitors))
         // Count currently on-site visitors (not checked out and not expired)
         const onSite = visitors.filter((v: any) => {
-          // Expired logic (same as in recent visitors)
           let isExpired = false;
-          if (
-            v.status === "expired" ||
-            v.passStatus === "expired" ||
-            v.expired === true ||
-            v.isExpired === true
-          ) {
-            isExpired = true;
-          } else if (v.expiryDate) {
-            const expiry = new Date(v.expiryDate);
-            if (!isNaN(expiry.getTime()) && expiry < new Date()) {
+          const now = new Date();
+          // Check expiry by expectedCheckOutTime if present
+          if (v.expectedCheckOutTime) {
+            const expiry = new Date(v.expectedCheckOutTime);
+            if (!isNaN(expiry.getTime()) && expiry < now && (v.status === "checked_in" || v.status === "active")) {
               isExpired = true;
+              v.status = "expired";
             }
           }
-          if (!isExpired && (v.validTo || v.validUntil)) {
-            const expiry = new Date(v.validTo || v.validUntil);
-            if (!isNaN(expiry.getTime()) && expiry < new Date()) {
+          // Fallback to other expiry logic
+          if (!isExpired) {
+            if (
+              v.status === "expired" ||
+              v.passStatus === "expired" ||
+              v.expired === true ||
+              v.isExpired === true
+            ) {
               isExpired = true;
+            } else if (v.expiryDate) {
+              const expiry = new Date(v.expiryDate);
+              if (!isNaN(expiry.getTime()) && expiry < now) {
+                isExpired = true;
+              }
+            }
+            if (!isExpired && (v.validTo || v.validUntil)) {
+              const expiry = new Date(v.validTo || v.validUntil);
+              if (!isNaN(expiry.getTime()) && expiry < now) {
+                isExpired = true;
+              }
             }
           }
           return !v.checkOutDate && !v.checkOutTime && !isExpired;
@@ -320,32 +331,40 @@ export function ClientOverview() {
             ) : (
               <div className="space-y-4 max-h-80 overflow-y-auto pr-1">
                 {recentVisitors.map((visitor) => {
-                  // Enhanced expired logic: check multiple possible fields
+                  // Enhanced expired logic: check expectedCheckOutTime first
                   let isExpired = false;
+                  const now = new Date();
+                  if (visitor.expectedCheckOutTime) {
+                    const expiry = new Date(visitor.expectedCheckOutTime);
+                    if (!isNaN(expiry.getTime()) && expiry < now && (visitor.status === "checked_in" || visitor.status === "active")) {
+                      isExpired = true;
+                      visitor.status = "expired";
+                    }
+                  }
                   // 1. Explicit status fields
-                  if (
-                    visitor.status === "expired" ||
-                    visitor.passStatus === "expired" ||
-                    visitor.expired === true ||
-                    visitor.isExpired === true
-                  ) {
-                    isExpired = true;
-                  } else if (visitor.expiryDate) {
-                    // 2. Check expiryDate if present
-                    const expiry = new Date(visitor.expiryDate);
-                    if (!isNaN(expiry.getTime()) && expiry < new Date()) {
+                  if (!isExpired) {
+                    if (
+                      visitor.status === "expired" ||
+                      visitor.passStatus === "expired" ||
+                      visitor.expired === true ||
+                      visitor.isExpired === true
+                    ) {
                       isExpired = true;
+                    } else if (visitor.expiryDate) {
+                      // 2. Check expiryDate if present
+                      const expiry = new Date(visitor.expiryDate);
+                      if (!isNaN(expiry.getTime()) && expiry < now) {
+                        isExpired = true;
+                      }
+                    }
+                    // 3. Fallback: check if pass has a validTo or validUntil field
+                    if (!isExpired && (visitor.validTo || visitor.validUntil)) {
+                      const expiry = new Date(visitor.validTo || visitor.validUntil);
+                      if (!isNaN(expiry.getTime()) && expiry < now) {
+                        isExpired = true;
+                      }
                     }
                   }
-                  // 3. Fallback: check if pass has a validTo or validUntil field
-                  if (!isExpired && (visitor.validTo || visitor.validUntil)) {
-                    const expiry = new Date(visitor.validTo || visitor.validUntil);
-                    if (!isNaN(expiry.getTime()) && expiry < new Date()) {
-                      isExpired = true;
-                    }
-                  }
-                  // Debug: log visitor if still not working
-                  // console.log(visitor);
                   const isOnSite = !visitor.checkOutDate && !visitor.checkOutTime && !isExpired;
                   return (
                     <div key={visitor._id} className="flex items-center justify-between py-1">

@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import jsPDF from "jspdf";
+import { generateVisitorPassPDF } from "@/lib/pdfUtils";    
 
 const loadImageAsBase64 = (url: string): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -56,253 +57,161 @@ export default function VisitorDetailsPage() {
     fetchDetails();
   }, [passId]);
 
-    // const handleExportPDF = async () => {
-    //     if (!data || !data.pass) return;
-    //     const pass = data.pass;
-    //     const visitor = data.visitor;
 
-    //     const pdf = new jsPDF("p", "pt", "a4");
-    //     const pageWidth = pdf.internal.pageSize.getWidth();
-    //     const pageHeight = pdf.internal.pageSize.getHeight();
-    //     const margin = 40;
-    //     let y = margin;
+//     const handleExportPDF = async () => {
+//   if (!data || !data.pass) return;
+//   const pass = data.pass;
+//   const visitor = data.visitor;
 
-    //     // --- Outer border ---
-    //     pdf.setDrawColor(180);
-    //     pdf.setLineWidth(1);
-    //     pdf.rect(margin, margin, pageWidth - margin * 2, pageHeight - margin * 2);
+//   const pdf = new jsPDF("p", "pt", "a4");
+//   const pageWidth = pdf.internal.pageSize.getWidth();
+//   const pageHeight = pdf.internal.pageSize.getHeight();
+//   const margin = 40;
+//   let y = margin;
 
-    //     // --- Client Logo ---
-    //     if (clientLogoUrl) {
-    //         try {
-    //             const logoData = await loadImageAsBase64(
-    //                 `/api/proxy-image?url=${encodeURIComponent(clientLogoUrl)}`
-    //             );
-    //             pdf.addImage(logoData, "PNG", pageWidth / 2 - 40, y, 80, 40);
-    //         } catch (err) {
-    //             console.error("Logo load error:", err);
-    //         }
-    //     }
-    //     y += 55;
+//   // --- Outer border ---
+//   pdf.setDrawColor(180);
+//   pdf.setLineWidth(1);
+//   pdf.rect(margin, margin, pageWidth - margin * 2, pageHeight - margin * 2);
 
-    //     // --- Client Name ---
-    //     if (data?.client?.name) {
-    //         pdf.setFont("helvetica", "bold");
-    //         pdf.setFontSize(14);
-    //         pdf.text(data.client.name, pageWidth / 2, y, { align: "center" });
-    //     }
-    //     y += 30;
+//   // --- Client Logo ---
+//   if (clientLogoUrl) {
+//     try {
+//       const logoData = await loadImageAsBase64(
+//         `/api/proxy-image?url=${encodeURIComponent(clientLogoUrl)}`
+//       );
+//       pdf.addImage(logoData, "PNG", pageWidth / 2 - 40, y, 80, 40);
+//     } catch (err) {
+//       console.error("Logo load error:", err);
+//     }
+//   }
+//   y += 55;
 
-    //     // --- Title ---
-    //     pdf.setFont("helvetica", "bold");
-    //     pdf.setFontSize(20);
-    //     pdf.text("Visitor Pass", pageWidth / 2, y, { align: "center" });
-    //     y += 40;
+//   // --- Client Name ---
+//   if (data?.client?.name) {
+//     pdf.setFont("helvetica", "bold");
+//     pdf.setFontSize(14);
+//     pdf.text(data.client.name, pageWidth / 2, y, { align: "center" });
+//   }
+//   y += 30;
 
-    //     // --- Photo (left) & QR (right) ---
-    //     const photoSize = 120;
-    //     if (pass.photoUrl) {
-    //         try {
-    //             const imgData = await loadImageAsBase64(
-    //                 `/api/proxy-image?url=${encodeURIComponent(pass.photoUrl)}`
-    //             );
-    //             pdf.addImage(imgData, "JPEG", margin + 20, y, photoSize, photoSize);
-    //         } catch (err) {
-    //             console.error("Photo load error:", err);
-    //         }
-    //     }
+//   // --- Title ---
+//   pdf.setFont("helvetica", "bold");
+//   pdf.setFontSize(20);
+//   pdf.text("Visitor Pass", pageWidth / 2, y, { align: "center" });
+//   y += 40;
 
-    //     if (pass.qrCode) {
-    //         try {
-    //             const qrData = await loadImageAsBase64(pass.qrCode);
-    //             pdf.addImage(
-    //                 qrData,
-    //                 "PNG",
-    //                 pageWidth - margin - photoSize - 20,
-    //                 y,
-    //                 photoSize,
-    //                 photoSize
-    //             );
-    //         } catch (err) {
-    //             console.error("QR load error:", err);
-    //         }
-    //     }
+//   // --- Photo (left) & QR (right) ---
+//   const photoSize = 120;
+//   if (pass.photoUrl) {
+//     try {
+//       const imgData = await loadImageAsBase64(
+//         `/api/proxy-image?url=${encodeURIComponent(pass.photoUrl)}`
+//       );
+//       pdf.addImage(imgData, "JPEG", margin + 20, y, photoSize, photoSize);
+//     } catch (err) {
+//       console.error("Photo load error:", err);
+//     }
+//   }
 
-    //     y += photoSize + 40;
+//   if (pass.qrCode) {
+//     try {
+//       const qrData = await loadImageAsBase64(pass.qrCode);
+//       pdf.addImage(
+//         qrData,
+//         "PNG",
+//         pageWidth - margin - photoSize - 20,
+//         y,
+//         photoSize,
+//         photoSize
+//       );
+//     } catch (err) {
+//       console.error("QR load error:", err);
+//     }
+//   }
 
-    //     // --- Visitor Details ---
-    //     pdf.setFont("helvetica", "normal");
-    //     pdf.setFontSize(12);
+//   y += photoSize + 40;
 
-    //     const details: [string, any][] = [
-    //         ["Pass ID", pass.passId],
-    //         ["Name", pass.name],
-    //         ["Phone", pass.phone || visitor?.phone],
-    //         ["Email", pass.email || visitor?.email],
-    //         ["Visitor Type", pass.visitorType],
-    //         ["Coming From", pass.comingFrom],
-    //         ["Purpose of Visit", pass.purposeOfVisit],
-    //         ["Host", pass.host],
-    //         ["ID Type", pass.idType],
-    //         ["Visitor ID", pass.visitorIdText],
-    //         ["Check In Date", new Date(pass.checkInDate).toLocaleString()],
-    //        // ["Check Out Date", new Date(pass.checkOutDate).toLocaleString()],
-    //         ["Expected Check-Out", new Date(pass.expectedCheckOutTime).toLocaleString()],
-    //         ["Status", pass.status],
-    //         ["Notes", pass.notes || ""],
-    //     ];
+//   // --- Visitor Details ---
+//   pdf.setFont("helvetica", "normal");
+//   pdf.setFontSize(12);
 
-    //     let textY = y;
-    //     details.forEach(([label, value]) => {
-    //         pdf.setFont("helvetica", "bold");
-    //         pdf.text(`${label}:`, margin + 30, textY);
-    //         pdf.setFont("helvetica", "normal");
-    //         pdf.text(`${value || ""}`, margin + 160, textY);
-    //         textY += 20;
-    //     });
+//   const details: [string, any][] = [
+//     ["Pass ID", pass.passId],
+//     ["Name", pass.name],
+//     ["Phone", pass.phone || visitor?.phone],
+//     ["Email", pass.email || visitor?.email],
+//     ["Visitor Type", pass.visitorType],
+//     ["Coming From", pass.comingFrom],
+//     ["Purpose of Visit", pass.purposeOfVisit],
+//     ["Host", pass.host],
+//     ["ID Type", pass.idType],
+//     ["Visitor ID", pass.visitorIdText],
+//     ["Check In Date", new Date(pass.checkInDate).toLocaleString()],
+//     // ["Check Out Date", new Date(pass.checkOutDate).toLocaleString()],
+//     ["Expected Check-Out", new Date(pass.expectedCheckOutTime).toLocaleString()],
+//     ["Status", pass.status],
+//     ["Notes", pass.notes || ""],
+//   ];
 
-    //     pdf.save(`VisitorPass_${pass.passId}.pdf`);
-    // };
+//   let textY = y;
+//   details.forEach(([label, value]) => {
+//     pdf.setFont("helvetica", "bold");
+//     pdf.text(`${label}:`, margin + 30, textY);
+//     pdf.setFont("helvetica", "normal");
+//     pdf.text(`${value || ""}`, margin + 160, textY);
+//     textY += 20;
+//   });
 
 
-    const handleExportPDF = async () => {
+//    // --- Separator line ---
+//   textY += 20;
+//   pdf.setDrawColor(180);
+//   pdf.setLineWidth(0.5);
+//   pdf.line(margin + 20, textY, pageWidth - margin - 20, textY);
+
+
+//   // --- ✅ General Instructions Section ---
+//   textY += 40;
+//   pdf.setFont("helvetica", "bold");
+//   pdf.setFontSize(14);
+//   pdf.text("General Instructions", margin + 30, textY);
+
+//   textY += 20;
+//   pdf.setFont("helvetica", "normal");
+//   pdf.setFontSize(11);
+
+// // Use clientInstructions from state
+
+//     if (clientInstructions) {
+//         // If client has multiline instructions, split into lines
+//         const lines = pdf.splitTextToSize(clientInstructions, pageWidth - margin * 2);
+//         pdf.text(lines, margin + 40, textY);
+//         textY += lines.length * 15;
+//     } else {
+//         pdf.text("No special instructions provided.", margin + 40, textY);
+//         textY += 15;
+//     }
+
+//   pdf.save(`VisitorPass_${pass.passId}.pdf`);
+// };
+
+
+const handleExportPDF = async () => {
   if (!data || !data.pass) return;
-  const pass = data.pass;
-  const visitor = data.visitor;
-
-  const pdf = new jsPDF("p", "pt", "a4");
-  const pageWidth = pdf.internal.pageSize.getWidth();
-  const pageHeight = pdf.internal.pageSize.getHeight();
-  const margin = 40;
-  let y = margin;
-
-  // --- Outer border ---
-  pdf.setDrawColor(180);
-  pdf.setLineWidth(1);
-  pdf.rect(margin, margin, pageWidth - margin * 2, pageHeight - margin * 2);
-
-  // --- Client Logo ---
-  if (clientLogoUrl) {
-    try {
-      const logoData = await loadImageAsBase64(
-        `/api/proxy-image?url=${encodeURIComponent(clientLogoUrl)}`
-      );
-      pdf.addImage(logoData, "PNG", pageWidth / 2 - 40, y, 80, 40);
-    } catch (err) {
-      console.error("Logo load error:", err);
-    }
-  }
-  y += 55;
-
-  // --- Client Name ---
-  if (data?.client?.name) {
-    pdf.setFont("helvetica", "bold");
-    pdf.setFontSize(14);
-    pdf.text(data.client.name, pageWidth / 2, y, { align: "center" });
-  }
-  y += 30;
-
-  // --- Title ---
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(20);
-  pdf.text("Visitor Pass", pageWidth / 2, y, { align: "center" });
-  y += 40;
-
-  // --- Photo (left) & QR (right) ---
-  const photoSize = 120;
-  if (pass.photoUrl) {
-    try {
-      const imgData = await loadImageAsBase64(
-        `/api/proxy-image?url=${encodeURIComponent(pass.photoUrl)}`
-      );
-      pdf.addImage(imgData, "JPEG", margin + 20, y, photoSize, photoSize);
-    } catch (err) {
-      console.error("Photo load error:", err);
-    }
-  }
-
-  if (pass.qrCode) {
-    try {
-      const qrData = await loadImageAsBase64(pass.qrCode);
-      pdf.addImage(
-        qrData,
-        "PNG",
-        pageWidth - margin - photoSize - 20,
-        y,
-        photoSize,
-        photoSize
-      );
-    } catch (err) {
-      console.error("QR load error:", err);
-    }
-  }
-
-  y += photoSize + 40;
-
-  // --- Visitor Details ---
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(12);
-
-  const details: [string, any][] = [
-    ["Pass ID", pass.passId],
-    ["Name", pass.name],
-    ["Phone", pass.phone || visitor?.phone],
-    ["Email", pass.email || visitor?.email],
-    ["Visitor Type", pass.visitorType],
-    ["Coming From", pass.comingFrom],
-    ["Purpose of Visit", pass.purposeOfVisit],
-    ["Host", pass.host],
-    ["ID Type", pass.idType],
-    ["Visitor ID", pass.visitorIdText],
-    ["Check In Date", new Date(pass.checkInDate).toLocaleString()],
-    // ["Check Out Date", new Date(pass.checkOutDate).toLocaleString()],
-    ["Expected Check-Out", new Date(pass.expectedCheckOutTime).toLocaleString()],
-    ["Status", pass.status],
-    ["Notes", pass.notes || ""],
-  ];
-
-  let textY = y;
-  details.forEach(([label, value]) => {
-    pdf.setFont("helvetica", "bold");
-    pdf.text(`${label}:`, margin + 30, textY);
-    pdf.setFont("helvetica", "normal");
-    pdf.text(`${value || ""}`, margin + 160, textY);
-    textY += 20;
-  });
-
-
-   // --- Separator line ---
-  textY += 20;
-  pdf.setDrawColor(180);
-  pdf.setLineWidth(0.5);
-  pdf.line(margin + 20, textY, pageWidth - margin - 20, textY);
-
-
-  // --- ✅ General Instructions Section ---
-  textY += 40;
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(14);
-  pdf.text("General Instructions", margin + 30, textY);
-
-  textY += 20;
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(11);
-
-// Use clientInstructions from state
-
-    if (clientInstructions) {
-        // If client has multiline instructions, split into lines
-        const lines = pdf.splitTextToSize(clientInstructions, pageWidth - margin * 2);
-        pdf.text(lines, margin + 40, textY);
-        textY += lines.length * 15;
-    } else {
-        pdf.text("No special instructions provided.", margin + 40, textY);
-        textY += 15;
-    }
-
-  pdf.save(`VisitorPass_${pass.passId}.pdf`);
+  const pdfBlob = await generateVisitorPassPDF(
+    data.pass,
+    data.visitor,
+    data.client?.name || "",
+    clientLogoUrl,
+    clientInstructions
+  );
+  const url = URL.createObjectURL(pdfBlob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `VisitorPass_${data.pass.passId}.pdf`;
+  link.click();
 };
-
 
 
     const blobToBase64 = (blob: Blob): Promise<string> =>

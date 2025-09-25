@@ -120,25 +120,62 @@ export function VisitorManagement() {
     return null
   }
 
-  const normalizeVisitor = (p: any): VisitorType => {
-    const checkedOut =
-      !!p.checkOutTime ||
-      !!p.checkOutDate ||
-      ["checked-out", "checked_out", "expired", "closed"].includes(String(p.status || "").toLowerCase())
+  // const normalizeVisitor = (p: any): VisitorType => {
+  //   const checkedOut =
+  //     !!p.checkOutTime ||
+  //     !!p.checkOutDate ||
+  //     ["checked-out", "checked_out", "expired", "closed"].includes(String(p.status || "").toLowerCase())
 
-    return {
-      id: p.passId || p._id,
-      name: p.name || "-",
-      email: p.email || "",
-      company: p.company || p.comingFrom || "-",
-      phone: p.phone || "",
-      checkInTime: toISO(p.checkInDate),
-      checkOutTime: toISO(p.checkOutTime || p.checkOutDate),
-      purpose: p.purposeOfVisit || p.purpose || "",
-      host: p.host || "",
-      status: checkedOut ? "checked-out" : "checked-in",
-    }
+  //   return {
+  //     id: p.passId || p._id,
+  //     name: p.name || "-",
+  //     email: p.email || "",
+  //     company: p.company || p.comingFrom || "-",
+  //     phone: p.phone || "",
+  //     checkInTime: toISO(p.checkInDate),
+  //     checkOutTime: toISO(p.checkOutTime || p.checkOutDate),
+  //     purpose: p.purposeOfVisit || p.purpose || "",
+  //     host: p.host || "",
+  //     status: checkedOut ? "checked-out" : "checked-in",
+  //   }
+  // }
+
+  const normalizeVisitor = (p: any): VisitorType => {
+  const now = new Date();
+
+  const checkIn = toISO(p.checkInDate);
+  const checkOut = toISO(p.checkOutTime || p.checkOutDate);
+  const expectedCheckout = toISO(p.expectedCheckOutTime);
+
+  // Check if visitor is already checked out or expired in DB
+  let status = String(p.status || "").toLowerCase();
+
+  if (
+    checkOut || 
+    ["checked-out", "checked_out", "expired", "closed"].includes(status)
+  ) {
+    status = "checked-out";
+  } else if (expectedCheckout && new Date(expectedCheckout) < now) {
+    // ✅ auto-expire if expected checkout is in past and not checked out
+    status = "expired";
+  } else {
+    status = "checked-in";
   }
+
+  return {
+    id: p.passId || p._id,
+    name: p.name || "-",
+    email: p.email || "",
+    company: p.company || p.comingFrom || "-",
+    phone: p.phone || "",
+    checkInTime: checkIn,
+    checkOutTime: checkOut,
+    purpose: p.purposeOfVisit || p.purpose || "",
+    host: p.host || "",
+    status: status as "checked-in" | "checked-out" | "expired",
+  };
+};
+
 
   const fetchVisitors = useCallback(async (startOffset = 0, append = false) => {
     try {
@@ -242,6 +279,8 @@ export function VisitorManagement() {
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Checked In</Badge>
       case "checked-out":
         return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Checked Out</Badge>
+        case "expired":
+      return <Badge className="bg-red-100 text-red-800">Expired</Badge>;
       case "scheduled":
         return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Scheduled</Badge>
       default:

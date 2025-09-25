@@ -1,7 +1,4 @@
 "use client"
-
-import type React from "react"
-
 import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,6 +13,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { UserCheck, UserX, Clock, Users, CheckCircle, AlertCircle, Camera, QrCode } from "lucide-react"
 //import handleExportPDF from "@/app/client-dashboard/visitor/[passId]/page"
 import { FileText, MessageCircle, Mail } from "lucide-react"
+import { sendingWhatsapp } from "@/lib/whatsapp"
+import {generateVisitorPassPDF} from "@/lib/pdfUtils"
 
 interface CheckInFormData {
   name: string
@@ -53,6 +52,8 @@ export function VisitorCheckIn() {
   const [selectedVisitor, setSelectedVisitor] = useState("")
   const [clientLogoUrl, setClientLogoUrl] = useState<string>("")
   const [clientId, setClientId] = useState<string>("")
+  const [clientName, setClientName] = useState<string>("");
+  const [clientInstructions, setClientInstructions] = useState<string>("");
   const [visitors, setVisitors] = useState<any[]>([])
 
   useEffect(() => {
@@ -71,18 +72,22 @@ export function VisitorCheckIn() {
   }, [])
 
   useEffect(() => {
-    // Fetch client logo from new client profile API
-    async function fetchClientLogo() {
+    // Fetch client logo and name/instructions from profile API
+    async function fetchClientProfile() {
       try {
         const res = await fetch("/api/client/profile");
         if (!res.ok) throw new Error("Failed to fetch client profile");
         const data = await res.json();
         setClientLogoUrl(data.logoUrl || "/uploads/default-logo.png");
+        setClientName(data.name || "");
+        setClientInstructions(data.instructions || "");
       } catch {
         setClientLogoUrl("/uploads/default-logo.png");
+        setClientName("");
+        setClientInstructions("");
       }
     }
-    fetchClientLogo();
+    fetchClientProfile();
   }, []);
 
   useEffect(() => {
@@ -292,9 +297,62 @@ export function VisitorCheckIn() {
                       {/* <svg width="18" height="18" fill="none" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/><path d="M14 2v6h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg> */}
                       <FileText className="h-4 w-4" />
                     </Button>
-                    <Button variant="outline" size="sm" title="Send WhatsApp">
+                    {/* <Button variant="outline" size="sm" title="Send WhatsApp">
                       <MessageCircle className="h-4 w-4 text-green-600" />
-                    </Button>
+                    </Button> */}
+
+                    <Button
+  variant="outline"
+  size="sm"
+  title="Send WhatsApp"
+  onClick={async (e) => {
+    e.stopPropagation();
+    try {
+      // Generate PDF
+      const pdfBlob = await generateVisitorPassPDF(
+        pass,
+        null,
+        clientName || "",
+        clientLogoUrl,
+        clientInstructions || ""
+      );
+
+      // Upload it (to `/uploads`) via your existing `/api/upload` or local saveFileToLocal
+      const formData = new FormData();
+      formData.append("file", new File([pdfBlob], `VisitorPass_${pass.passId}.pdf`, { type: "application/pdf" }));
+
+      const uploadRes = await fetch("/api/upload", { method: "POST", body: formData });
+      const { url: pdfUrl } = await uploadRes.json();
+
+      // Send WhatsApp via backend API
+      try {
+        const wsRes = await fetch("/api/send-whatsapp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: pass.name,
+            number: pass.phone,
+            pdfUrl,
+            mediaName: `VisitorPass_${pass.passId}.pdf`,
+          }),
+        });
+        if (!wsRes.ok) {
+          const errData = await wsRes.json();
+          throw new Error(errData.error || "Failed to send WhatsApp message");
+        }
+        alert("WhatsApp message sent!");
+      } catch (err) {
+        console.error(err);
+        alert("Failed to send WhatsApp message");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Failed to send WhatsApp message");
+    }
+  }}>
+    <MessageCircle className="h-4 w-4 text-green-600" />
+  </Button>
+
                     <Button variant="outline" size="sm" title="Send SMS">
                       <Mail className="h-4 w-4 text-blue-600" />
                     </Button>
