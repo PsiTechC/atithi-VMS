@@ -4,21 +4,23 @@ import { usePathname } from "next/navigation"
 import Link from "next/link"
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/components/auth/role-guard"
-import { LayoutDashboard, Users, UserCheck, UserPlus, BarChart3, Settings, Building2, CreditCard } from "lucide-react"
+import { LayoutDashboard, Users, UserCheck, UserPlus, BarChart3, Settings,House, CreditCard } from "lucide-react"
 
 const navigation = [
+   {
+    name: "",
+    href: "/client-dashboard/check-in",
+    icon: House,
+    roles: ["client-admin", "client-user"],
+  },
+  
   {
-    name: "Overview",
+    name: "Dashboard",
     href: "/client-dashboard",
     icon: LayoutDashboard,
     roles: ["client-admin", "client-user"],
   },
-  // {
-  //   name: "Visitor Check-In",
-  //   href: "/client-dashboard/check-in",
-  //   icon: UserCheck,
-  //   roles: ["client-admin", "client-user"],
-  // },
+ 
   // {
   //   name: "Visitor Management",
   //   href: "/client-dashboard/visitors",
@@ -59,13 +61,13 @@ export function ClientHeaderNav() {
 
   return (
     <nav className="flex items-center gap-1">
-      <div className="flex items-center gap-2 px-3 py-2 mr-4">
+      {/* <div className="flex items-center gap-2 px-3 py-2 mr-4">
         <Building2 className="h-5 w-5 text-primary" />
         <div>
           <span className="font-medium text-foreground block">Client Portal</span>
           <span className="text-xs text-muted-foreground">{user?.name || "Client"}</span>
         </div>
-      </div>
+      </div> */}
 
       {filteredNavigation.map((item) => {
         const isActive = pathname === item.href

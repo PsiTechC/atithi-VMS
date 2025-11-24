@@ -148,8 +148,8 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Access Point ID is required" }, { status: 400 });
     }
 
-    const body = await request.json();
-    const { name, description, location, active } = body;
+  const body = await request.json();
+  const { name, description, location, active, deviceId } = body;
 
     if (!name) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -157,7 +157,7 @@ export async function PUT(request: NextRequest) {
 
     const accessPoint = await AccessPoint.findByIdAndUpdate(
       id,
-      { name, description, location, active },
+      { name, description, location, active, deviceId: deviceId ?? null },
       { new: true, runValidators: true }
     );
 

@@ -1,34 +1,4 @@
-// import { NextResponse } from "next/server";
-// import { dbConnect } from "@/lib/mongodb";
-// import VisitorPass from "@/models/VisitorPass";
-// //fetch only passes that have clientId matching the logged in client
 
-// //implement client id session and fetch passes based on that client id session
-
-
-// export async function GET(req: Request) {
-    
-// 	try {
-// 		const { searchParams } = new URL(req.url);
-// 			const passId = searchParams.get("passId");
-// 			await dbConnect();
-// 			if (passId) {
-// 				const pass = await VisitorPass.findOne({ passId }).lean();
-// 				if (!pass) {
-// 					return NextResponse.json({ error: "Pass not found" }, { status: 404 });
-// 				}
-// 				return NextResponse.json({ pass });
-// 			} else {
-// 				const passes = await VisitorPass.find({}).lean();
-// 				return NextResponse.json({ passes });
-// 			}
-// 	} catch (error) {
-// 		const errorMessage = typeof error === "object" && error !== null && "message" in error
-// 			? (error as { message?: string }).message
-// 			: "Failed to fetch pass details";
-// 		return NextResponse.json({ error: errorMessage || "Failed to fetch pass details" }, { status: 500 });
-// 	}
-// }
 import { NextResponse } from "next/server";
 import { dbConnect } from "@/lib/mongodb";
 import VisitorPass from "@/models/VisitorPass";

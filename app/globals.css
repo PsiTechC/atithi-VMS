@@ -4,20 +4,27 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: oklch(96.235% 0.02296 180.231); /* Pure white for main background */
+   --background1: oklch(93.12% 0.01048 248.173); 
+  /* --background: oklch(90.541% 0.14492 94.294); */
+  --background: oklch(94.904% 0.04196 179.977);
   --foreground: oklch(57.745% 0.11397 253.18);
   --foreground1: oklch(26.448% 0.00003 271.152); /* Dark gray for text and primary elements */
-  --card: oklch(0.97 0 0); /* Light gray for cards and panels */
+  /* --card: oklch(0.97 0 0);  */
+  
+  --card: #ffffff;
   --card-foreground: oklch(0.205 0 0); /* Dark gray text for cards */
   --popover: oklch(1 0 0); /* White background for popovers */
   --popover-foreground: oklch(0.205 0 0); /* Dark gray text for popovers */
-  --primary: oklch(0.205 0 0); /* Dark gray for primary buttons and headers */
+  --primary: oklch(65.735% 0.14046 237.458); /* Dark gray for primary buttons and headers */
   --primary-foreground: oklch(1 0 0); /* White text for primary buttons */
   --secondary: oklch(0.646 0.222 280.116); /* Purple for secondary actions */
   --secondary-foreground: oklch(1 0 0); /* White text for secondary actions */
-  --muted: oklch(0.556 0 0); /* Medium gray for muted text */
-  --muted-foreground: oklch(54.517% 0.00006 271.152); /* White text for muted areas */
-  --accent: oklch(48.78% 0.24331 264.421); /* Purple accent for highlights */
+  --muted: oklch(65.735% 0.14046 237.458); /* Medium gray for muted text */
+  --muted-foreground: oklch(54.517% 0.00006 271.152);
+  --muted-foreground1: oklch(39.619% 0.04674 233.722); /* White text for muted areas */
+  --accent: oklch(48.78% 0.24331 264.421);
+  --accent1: oklch(43.074% 0.10261 245.05);
+   --accent2: oklch(36.884% 0.08584 244.037); /* Purple accent for highlights */
   --accent-foreground: oklch(1 0 0); /* White text for accents */
   --destructive: oklch(0.577 0.245 27.325); /* Red for error messages */
   --destructive-foreground: oklch(1 0 0); /* White text for destructive actions */
@@ -91,7 +98,9 @@
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-muted-foreground1: var(--muted-foreground1);
   --color-accent: var(--accent);
+  --color-accent1: var(--accent1);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);

@@ -77,12 +77,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required. Please log in again." }, { status: 401 });
     }
 
-    // Only return access points for the logged-in client
-    const accessPoints = await AccessPoint.find({ clientId }).sort({ createdAt: -1 });
+  // Only return access points for the logged-in client
+  const accessPoints = await AccessPoint.find({ clientId }).sort({ createdAt: -1 });
     return NextResponse.json(accessPoints);
   } catch (error: any) {
     console.error('Error fetching access points:', error);
-    return
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }
 
@@ -99,8 +99,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Authentication required. Please log in again." }, { status: 401 });
     }
 
-    const body = await request.json();
-    const { name, description, location, active } = body;
+  const body = await request.json();
+  // Debug incoming payload to help trace missing deviceId issues
+  console.log('Create AccessPoint payload:', body);
+  const { name, description, location, active } = body;
+
+  // Detect deviceId in body case-insensitively (client might send deviceID or other variant)
+  let deviceId: string | null = null;
+  if (body && typeof body === 'object') {
+    const key = Object.keys(body).find((k) => k.toLowerCase() === 'deviceid');
+    if (key) {
+      const raw = (body as any)[key];
+      if (raw !== null && raw !== undefined && String(raw).trim() !== '') {
+        deviceId = String(raw).trim();
+      } else {
+        deviceId = null;
+      }
+    }
+  }
+  console.log('Normalized deviceId:', deviceId);
 
     if (!name) {
       return NextResponse.json({ error: 'Name is required' }, { status: 400 });
@@ -110,12 +127,20 @@ export async function POST(request: NextRequest) {
       name,
       description,
       location,
+      deviceId: deviceId,
       active: active !== undefined ? active : true,
       clientId
     });
 
-    await accessPoint.save();
-    return NextResponse.json(accessPoint, { status: 201 });
+    const saved = await accessPoint.save();
+    // Log the saved plain object to verify persisted fields (deviceId etc.)
+    try {
+      console.log('Saved AccessPoint (toObject):', saved.toObject());
+    } catch (e) {
+      console.log('Saved AccessPoint (raw):', saved);
+    }
+    // Return the saved object so client can inspect persisted fields
+    return NextResponse.json(saved, { status: 201 });
   } catch (error: any) {
     console.error('Error creating access point:', error);
     if (error.code === 11000) {

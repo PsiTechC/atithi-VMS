@@ -113,15 +113,15 @@ export default function LoginPage() {
       </svg>
       <div className="w-full max-w-md space-y-8 relative z-10">
         <div className="text-center">
-          <div className="flex justify-center mb-2">
+          <div className="flex justify-center">
               <img
-                src={process.env.NEXT_PUBLIC_FAVICON_URL}
+                src={process.env.NEXT_PUBLIC_LOGIN_PAGE_IMAGE_URL}
                 alt="Atithi Logo"
-                className="h-20 w-20 object-contain mx-auto"
-                style={{ borderRadius: '50%' }}
+                className="h-30 w-150"
+                // style={{ borderRadius: '0%' }}
               />
           </div>
-          <h1 className="text-3xl font-bold text-foreground1">Atithi-Visitor Management</h1>
+          <h1 className="text-3xl font-bold text-foreground1">Visitor Management</h1>
           <p className="text-muted-foreground font-semibold mt-2">Secure access to your management portal</p>
         </div>
 

@@ -1,6 +1,5 @@
 
 
-
 import { NextRequest, NextResponse } from "next/server"
 import { dbConnect } from "@/lib/mongodb"
 import Visitor from "@/models/Visitor"
@@ -8,7 +7,7 @@ import VisitorPass from "@/models/VisitorPass"
 import QRCode from "qrcode-generator"
 import { saveFileToLocal } from "@/lib/localStorage";
 import { randomUUID } from "crypto";
-
+import  {sendHostApprovalMessage, sendHostApprovalToMultipleNumbers}  from "@/lib/ws";
 
 // Augment globalThis to include clientName
 declare global {
@@ -42,18 +41,6 @@ async function savePhotoToPublic(file: File | null): Promise<string | null> {
   const allowedTypes = new Set(["image/png", "image/jpeg", "image/jpg", "image/webp"]);
   if (!allowedTypes.has(file.type)) throw new Error("Unsupported image type. Use PNG/JPG/WEBP.");
 
-  // const arrayBuffer = await file.arrayBuffer();
-  // const buffer = Buffer.from(arrayBuffer);
-  // const { visitorImageKey, uploadBufferToR2 } = await import("@/lib/r2");
-  // let clientName = "client";
-  // try {
-  //   if (typeof globalThis.clientName === "string") clientName = globalThis.clientName;
-  // } catch {}
-  // const key = visitorImageKey(clientName, file);
-  // const { url } = await uploadBufferToR2({ buffer, key, contentType: file.type });
-  // return url;
-
-
   const url = await saveFileToLocal(file, "Visitors");
 return url;
 }
@@ -81,7 +68,8 @@ export async function POST(req: NextRequest) {
     const visitorType = formData.get("visitorType") as string;
     const comingFrom = formData.get("comingFrom") as string;
     const purposeOfVisit = formData.get("purposeOfVisit") as string;
-    const host = formData.get("host") as string;
+  const host = formData.get("host") as string;
+  const hostIdFromForm = formData.get("hostId") as string | null;
     const idType = formData.get("idType") as string;
     const visitorIdText = formData.get("visitorIdText") as string;
     const checkInDateStr = formData.get("checkInDate") as string;
@@ -91,7 +79,8 @@ export async function POST(req: NextRequest) {
     const phone = formData.get("phone") as string;
     const photoFile = formData.get("photo") as File | null;
 
-    if (!name || !visitorType || !comingFrom || !purposeOfVisit || !host || !idType || !visitorIdText || !checkInDateStr || !phone) {
+    // Accept either a host name/text or an explicit hostId from the form
+    if (!name || !visitorType || !comingFrom || !purposeOfVisit || (!host && !hostIdFromForm) || !idType || !visitorIdText || !checkInDateStr || !phone) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
@@ -123,29 +112,192 @@ export async function POST(req: NextRequest) {
       await visitor.save();
     }
 
-    const photoUrl = await savePhotoToPublic(photoFile);
+        const photoUrl = await savePhotoToPublic(photoFile);
+        
+    //const templateName = process.env.WHATSAPP_HOST_APPROVAL_TEMPLATE || 'atithi_host_1'
 
-    const visitorPass = await VisitorPass.create({
-      name,
-      visitorType,
-      comingFrom,
-      purposeOfVisit,
-      host,
-      idType,
-      visitorIdText,
-      passId,
-      visitorId: visitor._id,
-      phone: visitor.phone,
-      checkInDate,
-      checkOutDate,
-      expectedCheckOutTime,
-      email,
-      notes,
-      photoUrl,
-      qrCode,
-      status: "active",
-      clientId,
-    });
+    // Try to resolve host to a Host document (prefer hostId if provided, then id, name, phone or email)
+    const Host = (await import("@/models/Host")).default;
+    let hostRecord = null;
+    try {
+      // Prefer explicit hostId from the form (sent when a host was chosen in the UI)
+      if (hostIdFromForm && /^[0-9a-fA-F]{24}$/.test(hostIdFromForm)) {
+        hostRecord = await Host.findOne({ _id: hostIdFromForm, clientId });
+      }
+      // If host looks like an ObjectId, try findById first
+      if (!hostRecord && host && /^[0-9a-fA-F]{24}$/.test(host)) {
+        hostRecord = await Host.findOne({ _id: host, clientId });
+      }
+      // If not found, try exact name match
+      if (!hostRecord) {
+        hostRecord = await Host.findOne({ clientId, name: host });
+      }
+      // fallback: partial name, phone digits or email
+      if (!hostRecord) {
+        hostRecord = await Host.findOne({ clientId, $or: [ { name: new RegExp(`^${host}$`, 'i') }, { phone: host }, { email: host } ] });
+      }
+    } catch (e) {
+            // Non-fatal - keep hostRecord null and continue
+      console.debug("Host lookup failed", e);
+      hostRecord = null;
+    }
+
+              // const res = await fetch(url, {
+              //   method: 'POST',
+              //   headers: { 'content-type': 'application/json' },
+              //   body: JSON.stringify({ name: hostRecord.name, number: hostRecord.phone, templateName: templateName, parameters: [visitorPass.name || '', passData.comingFrom || '', passData.purposeOfVisit || '', approveUrl, rejectUrl] })
+
+    // Prepare visitor pass data
+    // const passData: any = {
+    //   name,
+    //   visitorType,
+    //   comingFrom,
+    //   purposeOfVisit,
+    //   host: hostRecord ? hostRecord.name : host,
+    //   idType,
+    //   visitorIdText,
+    //   passId,
+    //   visitorId: visitor._id,
+    //   phone: visitor.phone,
+    //   checkInDate,
+    //   checkOutDate,
+    //   expectedCheckOutTime,
+    //   email,
+    //   notes,
+    //   photoUrl,
+    //   qrCode,
+    //   status: "active",
+    //   clientId,
+    // };
+
+    // Prepare visitor pass data
+const passData: any = {
+  name,
+  visitorType,
+  comingFrom,
+  purposeOfVisit,
+  host: hostRecord ? hostRecord.name : host,
+  idType,
+  visitorIdText,
+  passId,
+  visitorId: visitor._id,
+  phone: visitor.phone,
+  checkInDate,
+  checkOutDate,
+  expectedCheckOutTime,
+  email,
+  notes,
+  photoUrl,
+  qrCode,
+  clientId,
+};
+
+// Default status; if host has approvalRequired → mark waiting
+let approvalRequired = false;
+let approvalStatus: "approved" | "pending" = "approved";
+// let status: "active" | "waiting for approval" = "active";
+
+// // If we resolved a Host document, attach its _id and check approval requirement
+// if (hostRecord) {
+//   passData.hostId = hostRecord._id;
+//   passData.host = hostRecord.name;
+//   if (hostRecord.approvalRequired) {
+//     approvalRequired = true;
+//     approvalStatus = "pending";
+//     status = "waiting for approval";
+//     passData.approvalRequired = true;
+//     passData.approvalStatus = "pending";
+//     passData.approvalToken = randomUUID();
+//     passData.approvalRequestedAt = new Date();
+//   }
+// }
+
+
+let status: "active" = "active"; // valid enum value
+
+if (hostRecord.approvalRequired) {
+  approvalRequired = true;
+  approvalStatus = "pending";
+  passData.approvalRequired = true;
+  passData.approvalStatus = "pending";
+  passData.approvalToken = randomUUID();
+  passData.approvalRequestedAt = new Date();
+  // status remains "active"
+}
+
+
+// Always include top-level status
+passData.status = status;
+
+
+    // If we resolved a Host document, attach its _id and check approval requirement
+    if (hostRecord) {
+      passData.hostId = hostRecord._id;
+      passData.host = hostRecord.name;
+      if (hostRecord.approvalRequired) {
+        passData.approvalRequired = true;
+        passData.approvalStatus = 'pending';
+        passData.approvalToken = randomUUID();
+        passData.approvalRequestedAt = new Date();
+      }
+    }
+
+    // If approval was required, send WhatsApp approval request to host (best-effort)
+    let waSent = false
+    let waError: string | null = null
+    let waDetails: any[] = []
+
+    const visitorPass = await VisitorPass.create(passData);
+
+    if (hostRecord && hostRecord.approvalRequired && visitorPass.approvalToken) {
+  try {
+    // Get all phone numbers from the host (prefer phones array, fallback to single phone)
+    const phoneNumbers = hostRecord.phones && hostRecord.phones.length > 0
+      ? hostRecord.phones
+      : hostRecord.phone
+        ? [hostRecord.phone]
+        : [];
+
+    if (phoneNumbers.length === 0) {
+      throw new Error("No phone numbers found for host");
+    }
+
+    // Send approval message to all phone numbers
+    const results = await sendHostApprovalToMultipleNumbers(
+      phoneNumbers,
+      {
+        hostName: hostRecord.name || "Host",
+        visitorName: visitorPass.name || "",
+        visitorPhone: visitorPass.phone || "",
+        comingFrom: passData.comingFrom || "",
+        purpose: passData.purposeOfVisit || "",
+        passId,
+        approvalToken: visitorPass.approvalToken!,
+      },
+      client.name
+    );
+
+    // Track results for each number
+    waDetails = results;
+
+    // Consider it sent if at least one succeeded
+    const successCount = results.filter(r => r.success).length;
+    waSent = successCount > 0;
+
+    // If all failed, set error message
+    if (successCount === 0) {
+      waError = `Failed to send to all ${phoneNumbers.length} number(s)`;
+    } else if (successCount < phoneNumbers.length) {
+      waError = `Sent to ${successCount}/${phoneNumbers.length} number(s)`;
+    }
+
+    console.log(`WhatsApp approval sent to ${successCount}/${phoneNumbers.length} number(s)`, results);
+  } catch (e: any) {
+    waSent = false;
+    waError = String(e?.message || e);
+    console.error("Host approval send failed:", waError);
+  }
+}
 
     return NextResponse.json(
       {
@@ -159,6 +311,15 @@ export async function POST(req: NextRequest) {
           qrCode: visitorPass.qrCode,
           checkInDate: visitorPass.checkInDate,
           checkOutDate: visitorPass.checkOutDate,
+          host: visitorPass.host,
+          hostId: visitorPass.hostId || null,
+          approvalRequired: visitorPass.approvalRequired || false,
+          approvalStatus: visitorPass.approvalStatus || 'approved',
+        },
+        whatsapp: {
+          sent: waSent,
+          error: waError,
+          details: waDetails.length > 0 ? waDetails : undefined
         },
       },
       { status: 201 }
@@ -168,4 +329,3 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message || "Failed to create visitor pass" }, { status: 500 });
   }
 }
-

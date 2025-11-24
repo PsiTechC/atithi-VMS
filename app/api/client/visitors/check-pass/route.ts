@@ -81,6 +81,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { dbConnect } from "@/lib/mongodb"
 import VisitorPass from "@/models/VisitorPass"
+import AccessPoint from '@/models/AccessPoint'
 import "@/models/Client";
 
 export async function POST(req: NextRequest) {
@@ -123,10 +124,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Pass has expired", expired: true }, { status: 400 })
     }
 
+    // If approval workflow is enabled for this pass and it's not yet approved, block check-in
+    if (visitorPass.approvalRequired && visitorPass.approvalStatus !== 'approved') {
+      return NextResponse.json({
+        error: "Pass awaiting host approval",
+        waitingForApproval: true,
+        approvalStatus: visitorPass.approvalStatus,
+      }, { status: 400 })
+    }
+
     // ✅ allow re-entry (active OR checked_out → checked_in)
     if (visitorPass.status === "active" || visitorPass.status === "checked_out") {
       visitorPass.status = "checked_in"
-       visitorPass.checkInDate = now
+      // If the pass was previously checked out, clear the old checkOutDate
+      // before setting a new checkInDate to avoid validation errors
+      // (pre-validate prevents checkOutDate < checkInDate).
+      visitorPass.checkOutDate = null
+      visitorPass.checkInDate = now
     }
 
     // ✅ always log this event in movementHistory
@@ -140,6 +154,28 @@ export async function POST(req: NextRequest) {
     })
 
     await visitorPass.save()
+
+    // After successful check-in, if an accessPointId was provided and that access point
+    // has a deviceId, send the START command to the device. Failures here must not
+    // block the check-in flow, so errors are caught and logged only.
+    if (accessPointId) {
+      try {
+        const ap = await AccessPoint.findById(accessPointId)
+        if (ap && ap.deviceId) {
+          try {
+            // require the process-manager we added earlier
+            const mqttClient = require('@/lib/mqtt/mqttControlClient')
+            // send 'start' command (mqttcontrol expects lower-case)
+            const resp = await mqttClient.sendCommandOnceAck(ap.deviceId, 'start', 10000)
+            console.log('Sent START to device', ap.deviceId, 'response=', resp)
+          } catch (err) {
+            console.error('Failed to send START to device', ap.deviceId, err)
+          }
+        }
+      } catch (err) {
+        console.error('Failed to lookup AccessPoint for START command', accessPointId, err)
+      }
+    }
 
     return NextResponse.json({
       success: true,

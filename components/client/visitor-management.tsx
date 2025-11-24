@@ -1,15 +1,12 @@
-
 "use client"
+
 import { useState, useEffect, useMemo, useRef, useCallback } from "react"
 
-//import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-
-
 
 type VisitorType = {
   id: string
@@ -21,77 +18,61 @@ type VisitorType = {
   checkOutTime: string | null
   purpose: string
   host: string
-  status: "checked-in" | "checked-out" | string
+  status: "checked-in" | "checked-out" | "expired" | string
+  // extra fields used for UI expiry override
+  expiryDate?: string | null
+  validTo?: string | null
+  validUntil?: string | null
+  expectedCheckOutTime?: string | null
+  rawStatus?: string
+  passStatus?: string
+  expiredFlag?: boolean
+  isExpiredFlag?: boolean
 }
-// Icon imports (must be in function scope for Next.js/React strict mode)
-const { Plus, Search, MoreHorizontal, UserCheck, UserX, Edit, Trash2, Users, Calendar } = require("lucide-react");
-const { Download } = require("lucide-react");
+
 type PurposeType = {
   _id: string
   name: string
   description?: string
 }
 
+type Cursor = { cursorDate: string | null; cursorId: string | null } | null
+
 export function VisitorManagement() {
-  // Icon imports (must be in function scope for Next.js/React strict mode)
-  const { Plus, Search, MoreHorizontal, UserCheck, UserX, Edit, Trash2, Users, Calendar, Download } = require("lucide-react");
-  // Export filtered visitors as CSV
-  const handleExportCSV = () => {
-    if (!filteredVisitors.length) return;
-    const headers = [
-      "Name",
-      "Email",
-      "Company",
-      "Phone",
-      "Purpose",
-      "Host",
-      "Check In",
-      "Check Out",
-      "Status"
-    ];
-    const rows = filteredVisitors.map((v: VisitorType) => [
-      v.name,
-      v.email,
-      v.company,
-      v.phone,
-      v.purpose,
-      v.host,
-      v.checkInTime ? new Date(v.checkInTime).toLocaleString() : "",
-      v.checkOutTime ? new Date(v.checkOutTime).toLocaleString() : "",
-      v.status
-    ]);
-    const csv = [headers, ...rows].map((r: string[]) => r.map((x: string) => `"${String(x).replace(/"/g, '""')}"`).join(",")).join("\r\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `visitors_export_${new Date().toISOString().slice(0,10)}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
-  };
-  const [searchTerm, setSearchTerm] = useState("")
-  const [visitors, setVisitors] = useState<VisitorType[]>([])
-  const [visitorsLoading, setVisitorsLoading] = useState(true)
-  const [visitorsError, setVisitorsError] = useState("")
-  const [hasMore, setHasMore] = useState(true)
-  const [isFetchingMore, setIsFetchingMore] = useState(false)
-  const [offset, setOffset] = useState(0)
-  const limit = 500
-  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+  // Icons in component scope
+  const { Search, UserCheck, Users, Calendar, Download } = require("lucide-react")
+
+  // -------------------- Cards (overview) state --------------------
+  const [cardsLoading, setCardsLoading] = useState(true)
+  const [cardsError, setCardsError] = useState("")
+  const [todayCount, setTodayCount] = useState<number>(0)
+  const [onSiteCount, setOnSiteCount] = useState<number>(0)
+  const [todayCheckedOutCount, setTodayCheckedOutCount] = useState<number>(0)
+
+  useEffect(() => {
+    ;(async () => {
+      setCardsLoading(true)
+      setCardsError("")
+      try {
+        const res = await fetch("/api/visitor-pass/overview?recentLimit=1")
+        if (!res.ok) throw new Error("Failed to fetch overview")
+        const data = await res.json()
+        setTodayCount(data.todayCount ?? 0)
+        setOnSiteCount(data.onSiteCount ?? 0)
+        setTodayCheckedOutCount(data.todayCheckedOutCount ?? 0)
+      } catch (e: any) {
+        setCardsError(e?.message || "Failed to load cards")
+      } finally {
+        setCardsLoading(false)
+      }
+    })()
+  }, [])
+
+  // -------------------- Purposes (cards + filters) --------------------
   const [purposes, setPurposes] = useState<PurposeType[]>([])
   const [purposesLoading, setPurposesLoading] = useState(true)
   const [purposesError, setPurposesError] = useState("")
-  // Filters
-  const [checkInFrom, setCheckInFrom] = useState<string>("")
-  const [checkInTo, setCheckInTo] = useState<string>("")
-  const [visitorTypeFilter, setVisitorTypeFilter] = useState<string>("")
-  const [purposeFilter, setPurposeFilter] = useState<string>("")
 
-  // --- fetch purposes ---
   useEffect(() => {
     async function fetchPurposes() {
       setPurposesLoading(true)
@@ -110,7 +91,31 @@ export function VisitorManagement() {
     fetchPurposes()
   }, [])
 
-  // --- fetch visitors (infinite scroll) ---
+  // -------------------- Visitors table (cursor pagination) --------------------
+  const [searchTerm, setSearchTerm] = useState("")
+  const [visitors, setVisitors] = useState<VisitorType[]>([])
+  const [visitorsLoading, setVisitorsLoading] = useState(true)
+  const [visitorsError, setVisitorsError] = useState("")
+
+  const [nextCursor, setNextCursor] = useState<Cursor>(null)
+  const [hasMore, setHasMore] = useState(true)
+  const [isFetchingMore, setIsFetchingMore] = useState(false)
+  const limit = 500
+
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null)
+
+  // Filters
+  const [checkInFrom, setCheckInFrom] = useState<string>("")
+  const [checkInTo, setCheckInTo] = useState<string>("")
+  const [visitorTypeFilter, setVisitorTypeFilter] = useState<string>("")
+  const [purposeFilter, setPurposeFilter] = useState<string>("")
+
+  // De-dupe + duplicate-request guards
+  const seenIdsRef = useRef<Set<string>>(new Set())
+  const requestedKeysRef = useRef<Set<string>>(new Set())
+  const makeKey = (c: Cursor) => (c?.cursorDate && c?.cursorId ? `${c.cursorDate}|${c.cursorId}` : "FIRST")
+
+  // Helper: normalize heterogeneous dates
   const toISO = (v: any): string | null => {
     if (!v) return null
     if (typeof v === "string") return v
@@ -120,118 +125,162 @@ export function VisitorManagement() {
     return null
   }
 
-  // const normalizeVisitor = (p: any): VisitorType => {
-  //   const checkedOut =
-  //     !!p.checkOutTime ||
-  //     !!p.checkOutDate ||
-  //     ["checked-out", "checked_out", "expired", "closed"].includes(String(p.status || "").toLowerCase())
+  // Normalize server doc -> VisitorType (and carry extra expiry fields)
+ const normalizeVisitor = (p: any): VisitorType => {
+    const now = new Date()
+    const checkIn = toISO(p.checkInDate)
+    const checkOut = toISO(p.checkOutTime || p.checkOutDate)
+    const expectedCheckout = toISO(p.expectedCheckOutTime)
+    const expiryDate = toISO(p.expiryDate)
+    const validTo = toISO(p.validTo)
+    const validUntil = toISO(p.validUntil)
 
-  //   return {
-  //     id: p.passId || p._id,
-  //     name: p.name || "-",
-  //     email: p.email || "",
-  //     company: p.company || p.comingFrom || "-",
-  //     phone: p.phone || "",
-  //     checkInTime: toISO(p.checkInDate),
-  //     checkOutTime: toISO(p.checkOutTime || p.checkOutDate),
-  //     purpose: p.purposeOfVisit || p.purpose || "",
-  //     host: p.host || "",
-  //     status: checkedOut ? "checked-out" : "checked-in",
-  //   }
-  // }
+    const rawStatus = String(p.status || "").toLowerCase()
+    const passStatus = p.passStatus
+    const expiredFlag = Boolean(p.expired === true)
+    const isExpiredFlag = Boolean(p.isExpired === true)
 
-  const normalizeVisitor = (p: any): VisitorType => {
-  const now = new Date();
+    // --- FIX: decide "expired" first, then checked-out, else checked-in ---
+    const isExplicitExpired =
+      expiredFlag ||
+      isExpiredFlag ||
+      rawStatus === "expired" ||
+      String(passStatus || "").toLowerCase() === "expired" ||
+      (expectedCheckout ? new Date(expectedCheckout) < now : false) ||
+      (expiryDate ? new Date(expiryDate) < now : false) ||
+      (validTo ? new Date(validTo) < now : false) ||
+      (validUntil ? new Date(validUntil) < now : false)
 
-  const checkIn = toISO(p.checkInDate);
-  const checkOut = toISO(p.checkOutTime || p.checkOutDate);
-  const expectedCheckout = toISO(p.expectedCheckOutTime);
+    let status: "checked-in" | "checked-out" | "expired" | string
+    if (isExplicitExpired) {
+      status = "expired"
+    } else if (checkOut || rawStatus === "checked-out" || rawStatus === "checked_out" || rawStatus === "closed") {
+      status = "checked-out"
+    } else {
+      status = "checked-in"
+    }
 
-  // Check if visitor is already checked out or expired in DB
-  let status = String(p.status || "").toLowerCase();
-
-  if (
-    checkOut || 
-    ["checked-out", "checked_out", "expired", "closed"].includes(status)
-  ) {
-    status = "checked-out";
-  } else if (expectedCheckout && new Date(expectedCheckout) < now) {
-    // ✅ auto-expire if expected checkout is in past and not checked out
-    status = "expired";
-  } else {
-    status = "checked-in";
+    return {
+      id: p.passId || p._id,
+      name: p.name || "-",
+      email: p.email || "",
+      company: p.company || p.comingFrom || "-",
+      phone: p.phone || "",
+      checkInTime: checkIn,
+      checkOutTime: checkOut,
+      purpose: p.purposeOfVisit || p.purpose || "",
+      host: p.host || "",
+      status, // <-- will now be "expired" when DB/fields indicate that
+      expiryDate,
+      validTo,
+      validUntil,
+      expectedCheckOutTime: expectedCheckout,
+      rawStatus: p.status,
+      passStatus,
+      expiredFlag,
+      isExpiredFlag,
+    }
   }
 
-  return {
-    id: p.passId || p._id,
-    name: p.name || "-",
-    email: p.email || "",
-    company: p.company || p.comingFrom || "-",
-    phone: p.phone || "",
-    checkInTime: checkIn,
-    checkOutTime: checkOut,
-    purpose: p.purposeOfVisit || p.purpose || "",
-    host: p.host || "",
-    status: status as "checked-in" | "checked-out" | "expired",
-  };
-};
+  // Fetch a page via cursor
+  const fetchVisitors = useCallback(
+    async (cursor: Cursor = null) => {
+      if (isFetchingMore) return
+      if (cursor && !hasMore) return
 
+      const key = makeKey(cursor)
+      if (requestedKeysRef.current.has(key)) return
+      requestedKeysRef.current.add(key)
 
-  const fetchVisitors = useCallback(async (startOffset = 0, append = false) => {
-    try {
-      if (startOffset === 0) setVisitorsLoading(true)
-      setIsFetchingMore(true)
-      setVisitorsError("")
-      const res = await fetch(`/api/visitor-pass/all?limit=${limit}&sort=desc&offset=${startOffset}`)
-      if (!res.ok) throw new Error("Failed to fetch visitors")
-      const data = await res.json()
-      const passes: any[] = Array.isArray(data.passes) ? data.passes : []
-      const normalized: VisitorType[] = passes.map(normalizeVisitor)
+      try {
+        if (!cursor) setVisitorsLoading(true)
+        setIsFetchingMore(true)
+        setVisitorsError("")
 
-      // Sort descending by check-in time
-      normalized.sort((a, b) => {
-        const aTime = a.checkInTime ? new Date(a.checkInTime).getTime() : 0;
-        const bTime = b.checkInTime ? new Date(b.checkInTime).getTime() : 0;
-        return bTime - aTime; // newest first
-      });
-      if (append) {
-        setVisitors((prev) => [...prev, ...normalized])
-      } else {
-        setVisitors(normalized)
+        const url = new URL("/api/visitor-pass/all(50)", window.location.origin)
+        url.searchParams.set("limit", String(limit))
+        if (cursor?.cursorDate && cursor?.cursorId) {
+          url.searchParams.set("cursorDate", cursor.cursorDate)
+          url.searchParams.set("cursorId", cursor.cursorId)
+        }
+
+        const res = await fetch(url.toString(), { method: "GET" })
+        if (!res.ok) throw new Error("Failed to fetch visitors")
+        const data = await res.json()
+        const passes: any[] = Array.isArray(data.passes) ? data.passes : []
+        const normalized = passes.map(normalizeVisitor)
+
+        // Deduplicate by id
+        const fresh = normalized.filter((v) => {
+          const id = String(v.id || "")
+          if (!id || seenIdsRef.current.has(id)) return false
+          seenIdsRef.current.add(id)
+          return true
+        })
+
+        if (fresh.length === 0) {
+          setHasMore(false)
+          setNextCursor(null)
+          return
+        }
+
+        setVisitors((prev) => (cursor ? [...prev, ...fresh] : fresh))
+
+        const nextC: Cursor = data.nextCursor || null
+        if (!nextC || makeKey(nextC) === key) {
+          setHasMore(false)
+          setNextCursor(null)
+        } else {
+          setHasMore(Boolean(data.hasMore))
+          setNextCursor(nextC)
+        }
+      } catch (err: any) {
+        setVisitorsError(err.message || "Failed to load visitors")
+      } finally {
+        setVisitorsLoading(false)
+        setIsFetchingMore(false)
       }
-      setHasMore(passes.length === limit)
-      setOffset(startOffset + passes.length)
-    } catch (err: any) {
-      setVisitorsError(err.message || "Failed to load visitors")
-    } finally {
-      setVisitorsLoading(false)
-      setIsFetchingMore(false)
-    }
-  }, [])
+    },
+    [isFetchingMore, hasMore]
+  )
 
   useEffect(() => {
-    fetchVisitors(0, false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    fetchVisitors(null)
+  }, [fetchVisitors])
 
-  // Infinite scroll handler
+  // Infinite scroll
   useEffect(() => {
     const container = scrollContainerRef.current
     if (!container) return
     const handleScroll = () => {
       if (!hasMore || isFetchingMore || visitorsLoading) return
       const { scrollTop, scrollHeight, clientHeight } = container
-      if (scrollHeight - scrollTop - clientHeight < 100) {
-        fetchVisitors(offset, true)
+      if (scrollHeight - scrollTop - clientHeight < 120) {
+        fetchVisitors(nextCursor)
       }
     }
     container.addEventListener("scroll", handleScroll)
     return () => container.removeEventListener("scroll", handleScroll)
-  }, [hasMore, isFetchingMore, visitorsLoading, offset, fetchVisitors])
+  }, [hasMore, isFetchingMore, visitorsLoading, nextCursor, fetchVisitors])
 
+  // -------- PURPOSE CARDS: Today-only counts --------
+  const todayPurposeCounts = useMemo(() => {
+    const todayStr = new Date().toDateString()
+    const acc = new Map<string, number>()
+    for (const v of visitors) {
+      if (!v.checkInTime) continue
+      const isToday = new Date(v.checkInTime).toDateString() === todayStr
+      if (!isToday) continue
+      const name = v.purpose || "Other"
+      acc.set(name, (acc.get(name) ?? 0) + 1)
+    }
+    return acc
+  }, [visitors])
+
+  // -------- Client-side filters for table --------
   const filteredVisitors = visitors.filter((visitor) => {
-    const q = searchTerm.toLowerCase();
-    // Search
+    const q = searchTerm.toLowerCase()
+
     if (
       q &&
       !(
@@ -240,38 +289,90 @@ export function VisitorManagement() {
         visitor.email.toLowerCase().includes(q)
       )
     ) {
-      return false;
+      return false
     }
-    // Date filter (compare only local date part)
+
     if (checkInFrom) {
-      if (!visitor.checkInTime) return false;
-      const checkInDateLocal = new Date(visitor.checkInTime);
-      const fromDate = new Date(checkInFrom);
-      // Set fromDate to local midnight
-      fromDate.setHours(0, 0, 0, 0);
-      // Set checkInDateLocal to local midnight
-      const checkInLocalMidnight = new Date(checkInDateLocal);
-      checkInLocalMidnight.setHours(0, 0, 0, 0);
-      if (checkInLocalMidnight < fromDate) return false;
+      if (!visitor.checkInTime) return false
+      const checkInDateLocal = new Date(visitor.checkInTime)
+      const fromDate = new Date(checkInFrom)
+      fromDate.setHours(0, 0, 0, 0)
+      const checkInLocalMidnight = new Date(checkInDateLocal)
+      checkInLocalMidnight.setHours(0, 0, 0, 0)
+      if (checkInLocalMidnight < fromDate) return false
     }
+
     if (checkInTo) {
-      if (!visitor.checkInTime) return false;
-      const checkInDateLocal = new Date(visitor.checkInTime);
-      const toDate = new Date(checkInTo);
-      // Set toDate to end of day
-      toDate.setHours(23, 59, 59, 999);
-      if (checkInDateLocal > toDate) return false;
+      if (!visitor.checkInTime) return false
+      const checkInDateLocal = new Date(visitor.checkInTime)
+      const toDate = new Date(checkInTo)
+      toDate.setHours(23, 59, 59, 999)
+      if (checkInDateLocal > toDate) return false
     }
-    // Visitor type filter
+
     if (visitorTypeFilter && visitorTypeFilter !== "All") {
-      if ((visitor as any).visitorType !== visitorTypeFilter) return false;
+      if ((visitor as any).visitorType !== visitorTypeFilter) return false
     }
-    // Purpose filter
+
     if (purposeFilter && purposeFilter !== "All") {
-      if (visitor.purpose !== purposeFilter) return false;
+      if (visitor.purpose !== purposeFilter) return false
     }
-    return true;
-  });
+
+    return true
+  })
+
+  // CSV export of filtered visitors
+  const handleExportCSV = () => {
+    if (!filteredVisitors.length) return
+    const headers = ["Name", "Email", "Company", "Phone", "Purpose", "Host", "Check In", "Check Out", "Status"]
+    const rows = filteredVisitors.map((v: VisitorType) => [
+      v.name,
+      v.email,
+      v.company,
+      v.phone,
+      v.purpose,
+      v.host,
+      v.checkInTime ? new Date(v.checkInTime).toLocaleString() : "",
+      v.checkOutTime ? new Date(v.checkOutTime).toLocaleString() : "",
+      // export with UI-derived status (includes expiry override)
+      deriveUIStatus(v),
+    ])
+    const csv = [headers, ...rows]
+      .map((r: string[]) => r.map((x: string) => `"${String(x).replace(/"/g, '""')}"`).join(","))
+      .join("\r\n")
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = `visitors_export_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    setTimeout(() => {
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    }, 100)
+  }
+
+  // ---------- UI helpers: expiry override + badges ----------
+  const isInPast = (iso?: string | null) => (iso ? new Date(iso).getTime() < Date.now() : false)
+
+  // If status is "checked-in" but any expiry field is past, display as "expired"
+  function deriveUIStatus(v: VisitorType): "checked-in" | "checked-out" | "expired" | string {
+    if (v.status === "checked-in") {
+      const anyExpired =
+        v.expiredFlag === true ||
+        v.isExpiredFlag === true ||
+        String(v.passStatus || "").toLowerCase() === "expired" ||
+        isInPast(v.expiryDate) ||
+        isInPast(v.validTo) ||
+        isInPast(v.validUntil) ||
+        // expected checkout being past also implies it's effectively expired on UI
+        isInPast(v.expectedCheckOutTime)
+
+      if (anyExpired) return "expired"
+    }
+    return v.status
+  }
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -279,8 +380,8 @@ export function VisitorManagement() {
         return <Badge className="bg-green-100 text-green-800 hover:bg-green-100">Checked In</Badge>
       case "checked-out":
         return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Checked Out</Badge>
-        case "expired":
-      return <Badge className="bg-red-100 text-red-800">Expired</Badge>;
+      case "expired":
+        return <Badge className="bg-red-100 text-red-800">Expired</Badge>
       case "scheduled":
         return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Scheduled</Badge>
       default:
@@ -288,30 +389,13 @@ export function VisitorManagement() {
     }
   }
 
-  const todayCount = useMemo(() => {
-    const today = new Date().toDateString()
-    return visitors.filter((v) => {
-      if (!v.checkInTime) return false
-      const d = new Date(v.checkInTime)
-      return d.toDateString() === today
-    }).length
-  }, [visitors])
+ // DD/MM/YYYY HH:mm (24-hour) for table cells
+const formatDateTime = (iso: string | null) =>
+  iso
+    ? `${new Date(iso).toLocaleDateString('en-GB')} ${new Date(iso).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })}`
+    : "-";
 
-  const todayCheckedOutCount = useMemo(() => {
-  const today = new Date().toDateString();
-  return visitors.filter((v) => {
-    if (!v.checkOutTime) return false;
-    const d = new Date(v.checkOutTime);
-    return d.toDateString() === today && v.status === "checked-out";
-  }).length;
-}, [visitors]);
-
-
-  const formatTime = (timeString: string | null) => {
-    if (!timeString) return "-"
-    return new Date(timeString).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" })
-  }
-
+  // -------------------- Render --------------------
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -319,12 +403,9 @@ export function VisitorManagement() {
           <h1 className="text-3xl font-bold text-foreground">Visitor Management</h1>
           <p className="text-muted-foreground">Track and manage all visitor activities</p>
         </div>
-     
-
-      
       </div>
 
-      {/* Summary Cards (unchanged logic, but now read live visitors) */}
+      {/* Summary Cards – backend-driven */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -333,7 +414,7 @@ export function VisitorManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-green-600">
-              {visitors.filter((v) => v.status === "checked-in").length}
+              {cardsLoading ? "--" : onSiteCount}
             </div>
             <p className="text-xs text-muted-foreground">Active visitors</p>
           </CardContent>
@@ -346,12 +427,11 @@ export function VisitorManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">
-              {typeof visitorsLoading !== "undefined" && visitorsLoading ? "--" : todayCount}
+              {cardsLoading ? "--" : todayCount}
             </div>
             <p className="text-xs text-muted-foreground">All visitors today</p>
           </CardContent>
         </Card>
-
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -360,14 +440,14 @@ export function VisitorManagement() {
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold text-blue-600">
-  {visitorsLoading ? "--" : todayCheckedOutCount}
-</div>
-            <p className="text-xs text-muted-foreground">From Facility</p>
+              {cardsLoading ? "--" : todayCheckedOutCount}
+            </div>
+            <p className="text-xs text-muted-foreground">From Facility (today)</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Purpose Cards */}
+      {/* Purpose Cards — **Today only** */}
       <div className="grid gap-4 md:grid-cols-3">
         {purposesLoading ? (
           <Card><CardContent>Loading purposes...</CardContent></Card>
@@ -376,16 +456,14 @@ export function VisitorManagement() {
         ) : purposes.length === 0 ? (
           <Card><CardContent>No purposes found</CardContent></Card>
         ) : (
-          purposes.map((purpose) => {
-            const checkedInCount = visitors.filter(
-              (v) => v.status === "checked-in" && v.purpose === purpose.name
-            ).length
+          purposes.map((purpose: PurposeType) => {
+            const todayCountForPurpose = todayPurposeCounts.get(purpose.name) ?? 0
             return (
               <Card key={purpose._id}>
                 <CardHeader>
                   <CardTitle className="text-sm font-medium flex items-center justify-between">
                     <span>{purpose.name}</span>
-                    <span className="text-green-600 text-lg font-bold">{checkedInCount}</span>
+                    <span className="text-green-600 text-lg font-bold">{todayCountForPurpose}</span>
                   </CardTitle>
                   {purpose.description && <CardDescription>{purpose.description}</CardDescription>}
                 </CardHeader>
@@ -395,6 +473,7 @@ export function VisitorManagement() {
         )}
       </div>
 
+      {/* All Visitors */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -407,7 +486,7 @@ export function VisitorManagement() {
           <div className="flex flex-wrap md:flex-nowrap items-end gap-4 mb-6 w-full">
             {/* Search box */}
             <div className="relative flex-1 min-w-[180px] max-w-xs">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search visitors..."
                 value={searchTerm}
@@ -422,7 +501,7 @@ export function VisitorManagement() {
                 type="date"
                 className="border rounded px-2 py-1 text-sm"
                 value={checkInFrom}
-                onChange={e => setCheckInFrom(e.target.value)}
+                onChange={(e) => setCheckInFrom(e.target.value)}
               />
             </div>
             {/* Check In To */}
@@ -432,7 +511,7 @@ export function VisitorManagement() {
                 type="date"
                 className="border rounded px-2 py-1 text-sm"
                 value={checkInTo}
-                onChange={e => setCheckInTo(e.target.value)}
+                onChange={(e) => setCheckInTo(e.target.value)}
               />
             </div>
             {/* Visitor Type */}
@@ -441,7 +520,7 @@ export function VisitorManagement() {
               <select
                 className="border rounded px-2 py-1 text-sm min-w-[120px]"
                 value={visitorTypeFilter}
-                onChange={e => setVisitorTypeFilter(e.target.value)}
+                onChange={(e) => setVisitorTypeFilter(e.target.value)}
               >
                 <option value="">All</option>
                 {[...new Set(visitors.map(v => (v as any).visitorType).filter(Boolean))].map((type) => (
@@ -455,7 +534,7 @@ export function VisitorManagement() {
               <select
                 className="border rounded px-2 py-1 text-sm min-w-[120px]"
                 value={purposeFilter}
-                onChange={e => setPurposeFilter(e.target.value)}
+                onChange={(e) => setPurposeFilter(e.target.value)}
               >
                 <option value="">All</option>
                 {purposes.map((p) => (
@@ -474,7 +553,6 @@ export function VisitorManagement() {
 
           <div className="rounded-md border overflow-hidden">
             <div className="overflow-x-auto">
-              {/* adjust the height as you like */}
               <div
                 className="max-h-[420px] overflow-y-auto"
                 ref={scrollContainerRef}
@@ -493,37 +571,36 @@ export function VisitorManagement() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredVisitors.map((visitor) => (
-                      <TableRow key={visitor.id}>
-                        <TableCell>
-                          <div>
-                            <p className="font-medium">{visitor.name}</p>
-                            <p className="text-xs text-muted-foreground">{visitor.email}</p>
-                          </div>
-                        </TableCell>
-                        <TableCell>{visitor.company}</TableCell>
-                        <TableCell>{visitor.purpose}</TableCell>
-                        <TableCell>{visitor.host}</TableCell>
-                        <TableCell>
-                          {visitor.checkInTime
-                            ? `${new Date(visitor.checkInTime).toLocaleDateString()} ${new Date(visitor.checkInTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                            : "-"}
-                        </TableCell>
-                        <TableCell>
-                          {visitor.checkOutTime
-                            ? `${new Date(visitor.checkOutTime).toLocaleDateString()} ${new Date(visitor.checkOutTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                            : "-"}
-                        </TableCell>
-<TableCell>{getStatusBadge(visitor.status)}</TableCell>
-                      </TableRow>
-                    ))}
+                    {filteredVisitors.map((visitor) => {
+                      const uiStatus = deriveUIStatus(visitor)
+                      return (
+                        <TableRow key={visitor.id}>
+                          <TableCell>
+                            <div>
+                              <p className="font-medium">{visitor.name}</p>
+                              <p className="text-xs text-muted-foreground">{visitor.email}</p>
+                            </div>
+                          </TableCell>
+                          <TableCell>{visitor.company}</TableCell>
+                          <TableCell>{visitor.purpose}</TableCell>
+                          <TableCell>{visitor.host}</TableCell>
+                          <TableCell>{formatDateTime(visitor.checkInTime)}</TableCell>
+                          <TableCell>{formatDateTime(visitor.checkOutTime)}</TableCell>
+                          <TableCell>{getStatusBadge(uiStatus)}</TableCell>
+                        </TableRow>
+                      )
+                    })}
                   </TableBody>
                 </Table>
+
                 {isFetchingMore && (
                   <div className="text-center py-2 text-muted-foreground text-xs">Loading more...</div>
                 )}
                 {!hasMore && visitors.length > 0 && (
                   <div className="text-center py-2 text-muted-foreground text-xs">No more visitors to load.</div>
+                )}
+                {visitorsError && (
+                  <div className="text-center py-2 text-red-500 text-xs">{visitorsError}</div>
                 )}
               </div>
             </div>

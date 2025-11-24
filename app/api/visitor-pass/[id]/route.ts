@@ -47,7 +47,7 @@
 // }
 
 // app/api/visitor-pass/[id]/route.ts
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { dbConnect } from "@/lib/mongodb";
 import VisitorPass from "@/models/VisitorPass";
@@ -110,3 +110,104 @@ export async function GET(_req: Request, context: any) {
     );
   }
 }
+
+export async function PUT(req: NextRequest, context: any) {
+  try {
+    await dbConnect();
+
+    const clientSession = req.cookies.get("client-session");
+    if (!clientSession) return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+
+    const clientId = clientSession.value;
+    if (!clientId) return NextResponse.json({ error: "Invalid session" }, { status: 401 });
+
+    const passParam: string | undefined = context?.params?.id ?? context?.params?.passId;
+    if (!passParam) {
+      return NextResponse.json({ error: "Missing pass id." }, { status: 400 });
+    }
+
+    const pass = await VisitorPass.findOne({ passId: passParam, clientId });
+    if (!pass) {
+      return NextResponse.json({ error: "Visitor pass not found" }, { status: 404 });
+    }
+
+    const formData = await req.formData();
+
+    const name = formData.get("name") as string;
+    const visitorType = formData.get("visitorType") as string;
+    const comingFrom = formData.get("comingFrom") as string;
+    const purposeOfVisit = formData.get("purposeOfVisit") as string;
+    const host = formData.get("host") as string;
+    const idType = formData.get("idType") as string;
+    const visitorIdText = formData.get("visitorIdText") as string;
+    const checkInDateStr = formData.get("checkInDate") as string;
+    const expectedCheckOutTimeStr = formData.get("expectedCheckOutTime") as string;
+    const email = formData.get("email") as string;
+    const notes = formData.get("notes") as string;
+    const phone = formData.get("phone") as string;
+    const photoFile = formData.get("photo") as File | null;
+
+    // Check if this is a partial photo update
+    const isPhotoOnly = photoFile && photoFile.size > 0 && !name && !visitorType && !comingFrom && !purposeOfVisit && !host && !idType && !visitorIdText && !checkInDateStr && !phone;
+
+    if (isPhotoOnly) {
+      // Handle photo upload only
+      const { saveFileToLocal } = await import("@/lib/localStorage");
+      const photoUrl = await saveFileToLocal(photoFile, "Visitors");
+      pass.photoUrl = photoUrl;
+      await pass.save();
+      return NextResponse.json({ url: photoUrl });
+    }
+
+    // Full update
+    if (!name || !visitorType || !comingFrom || !purposeOfVisit || !host || !idType || !visitorIdText || !checkInDateStr || !phone) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    }
+
+    const checkInDate = new Date(checkInDateStr);
+    const expectedCheckOutTime = expectedCheckOutTimeStr ? new Date(expectedCheckOutTimeStr) : pass.expectedCheckOutTime;
+
+    // Handle photo upload if provided
+    let photoUrl = pass.photoUrl;
+    if (photoFile && photoFile.size > 0) {
+      const { saveFileToLocal } = await import("@/lib/localStorage");
+      photoUrl = await saveFileToLocal(photoFile, "Visitors");
+    }
+
+    // Update VisitorPass
+    pass.name = name;
+    pass.visitorType = visitorType;
+    pass.comingFrom = comingFrom;
+    pass.purposeOfVisit = purposeOfVisit;
+    pass.host = host;
+    pass.idType = idType;
+    pass.visitorIdText = visitorIdText;
+    pass.checkInDate = checkInDate;
+    pass.expectedCheckOutTime = expectedCheckOutTime;
+    pass.email = email || pass.email;
+    pass.notes = notes || pass.notes;
+    pass.phone = phone;
+    pass.photoUrl = photoUrl;
+
+    await pass.save();
+
+    // Update Visitor if phone or email changed
+    const visitor = await Visitor.findById(pass.visitorId);
+    if (visitor) {
+      visitor.name = name;
+      visitor.phone = phone;
+      visitor.email = email || visitor.email;
+      visitor.company = comingFrom;
+      await visitor.save();
+    }
+
+    return NextResponse.json({ success: true, passId: pass.passId });
+  } catch (err: any) {
+    console.error("PUT /visitor-pass/[id] error:", err);
+    return NextResponse.json(
+      { error: err?.message ?? "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+  

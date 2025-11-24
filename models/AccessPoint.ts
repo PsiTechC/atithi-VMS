@@ -5,6 +5,7 @@ export interface IAccessPoint extends Document {
   name: string;
   description?: string;
   location?: string;
+  deviceId?: string | null;
   active?: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -16,6 +17,8 @@ const AccessPointSchema: Schema = new Schema(
     name: { type: String, required: true }, // ❗ no global unique here
     description: { type: String },
     location: { type: String },
+    // Optional hardware device identifier (e.g. MQTT device id)
+    deviceId: { type: String, default: null },
     active: { type: Boolean, default: true },
   },
   {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { dbConnect } from "@/lib/mongodb"
 import Visitor from "@/models/Visitor"
+import VisitorPass from "@/models/VisitorPass"
 
 export async function GET(req: NextRequest) {
   try {
@@ -28,14 +29,21 @@ export async function GET(req: NextRequest) {
     const visitor = await Visitor.findOne({ phone, clientId })
 
     if (visitor) {
+      // Find last pass for this phone + client quickly (indexed query)
+      const lastPass = await VisitorPass.findOne({ phone, clientId })
+        .sort({ checkInDate: -1 })
+        .lean()
+        .select('passId name purposeOfVisit host checkInDate expectedCheckOutTime visitorType visitorIdText email notes photoUrl status comingFrom idType company')
+
       return NextResponse.json({
         exists: true,
         visitor: {
           id: visitor._id,
-          passId: visitor.passId,          
+          passId: visitor.passId,
           name: visitor.name,
           email: visitor.email,
-          company: visitor.company
+          company: visitor.company,
+          lastPass: lastPass || null,
         }
       })
     } else {

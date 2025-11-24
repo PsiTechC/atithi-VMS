@@ -76,49 +76,50 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Client ID is required" }, { status: 400 })
     }
 
+    // Only find passes that are currently active/checked_in (do not match already checked_out)
     const visitorPass = await VisitorPass.findOne({
       passId,
       clientId,
-      status: { $in: ["active", "checked_in", "checked_out"] },
+      status: { $in: ["active", "checked_in","checked_out"] },
     })
 
     if (!visitorPass) {
-      return NextResponse.json({ error: "Invalid or inactive pass ID" }, { status: 404 })
+      // Could be not-found, inactive, or already checked out
+      return NextResponse.json({ error: "Invalid, inactive or already checked-out pass ID" }, { status: 404 })
     }
 
     const now = new Date()
 
-    // // ✅ close the latest open history entry (if any)
-    // if (Array.isArray(visitorPass.movementHistory) && visitorPass.movementHistory.length) {
-    //   const openIdx = [...visitorPass.movementHistory]
-    //     .map((h, i) => ({ h, i }))
-    //     .reverse()
-    //     .find(({ h }) => h.type === "check_in")?.i
+    // Ensure movementHistory exists
+    if (!Array.isArray(visitorPass.movementHistory)) visitorPass.movementHistory = []
 
-    //   if (openIdx !== undefined) {
-    //     // mark this as checkout
-    //     visitorPass.movementHistory.push({
-    //       timestamp: now,
-    //       type: "check_out",
-    //       accessPointId: accessPointId || undefined,
-    //       accessPointName: accessPointName || undefined,
-    //       method: method || "unknown",
-    //     })
-    //   }
-    // } else {
-    //   // if no history yet, still log checkout
-    //   visitorPass.movementHistory = [
-    //     {
-    //       timestamp: now,
-    //       type: "check_out",
-    //       accessPointId: accessPointId || undefined,
-    //       accessPointName: accessPointName || undefined,
-    //       method: method || "unknown",
-    //     },
-    //   ]
-    // }
+    // If the last recorded movement is already a check_out, treat as already checked out
+    // but allow checkout from a different access point (some sites track exits at multiple gates)
+    const lastMovement = visitorPass.movementHistory.length > 0
+      ? visitorPass.movementHistory[visitorPass.movementHistory.length - 1]
+      : null
 
-     // Log the event
+    if (lastMovement && lastMovement.type === 'check_out') {
+      // Determine last movement access point identifier (prefer id, fallback to name)
+      const lastApIdentifier = lastMovement.accessPointId || lastMovement.accessPointName || null
+      const newApIdentifier = accessPointId || accessPointName || null
+
+      const sameAccessPoint = (() => {
+        // If both identifiers exist, compare them
+        if (lastApIdentifier && newApIdentifier) return String(lastApIdentifier) === String(newApIdentifier)
+        // If neither provided, treat as same access point (duplicate)
+        if (!lastApIdentifier && !newApIdentifier) return true
+        // One provided and the other not — treat as different
+        return false
+      })()
+
+      if (sameAccessPoint) {
+        return NextResponse.json({ error: 'Visitor already checked out at this access point' }, { status: 400 })
+      }
+      // otherwise allow check-out event to be recorded for a different access point
+    }
+
+    // Record checkout event
     visitorPass.movementHistory.push({
       timestamp: now,
       type: "check_out",
@@ -129,11 +130,11 @@ export async function POST(req: NextRequest) {
 
     visitorPass.checkOutDate = now // last actual checkout timestamp
 
-    // ✅ after checkout, keep pass active until expiry
+    // After checkout, set status to checked_out (or expired if past expected time)
     if (visitorPass.expectedCheckOutTime && visitorPass.expectedCheckOutTime < now) {
       visitorPass.status = "expired"
     } else {
-      visitorPass.status = "active" // allows re-entry before expiry
+      visitorPass.status = "checked_out"
     }
 
     await visitorPass.save()

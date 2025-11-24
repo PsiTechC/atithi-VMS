@@ -100,7 +100,7 @@ export function DashboardLayout({ children, sidebar, title, showHeaderNav = fals
                     <div className="flex items-center gap-2 p-2">
                       <div className="flex flex-col space-y-1 leading-none">
                         <p className="font-medium">{user?.name}</p>
-                        <p className="text-xs text-muted-foreground">{user?.email}</p>
+                        <p className="text-xs text-muted-foreground1">{user?.email}</p>
                       </div>
                     </div>
                     {/* Only for client-user role: show Change Password */}

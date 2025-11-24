@@ -104,19 +104,30 @@ export async function POST(
             return NextResponse.json({ error: "Client not found" }, { status: 404 });
         }
 
-        // Use existing plainPassword if available, else generate new
-        let plainPassword: string;
+        // // Use existing plainPassword if available, else generate new
+        // let plainPassword: string;
 
-        if (client.plainPassword) {
-            plainPassword = client.plainPassword;
-        } else {
-            plainPassword = genPassword(12);
-            const hash = await bcrypt.hash(plainPassword, 12);
-            client.passwordHash = hash;
-            client.passwordSetAt = new Date();
-            client.plainPassword = plainPassword;
-            await client.save();
-        }
+        // if (client.plainPassword) {
+        //     plainPassword = client.plainPassword;
+        // } else {
+        //     plainPassword = genPassword(12);
+        //     const hash = await bcrypt.hash(plainPassword, 12);
+        //     client.passwordHash = hash;
+        //     client.passwordSetAt = new Date();
+        //     client.plainPassword = plainPassword;
+        //     await client.save();
+        // }
+
+         // Always generate a new password and persist its hash.
+        // We keep the plain password in `plainPassword` to include in the invite email,
+        // but the authoritative stored value is the hash in `passwordHash`.
+        const plainPassword = genPassword(12);
+        const hash = await bcrypt.hash(plainPassword, 12);
+        client.passwordHash = hash;
+        client.passwordSetAt = new Date();
+        // keep the plain password field for backwards compatibility / email sending
+        client.plainPassword = plainPassword;
+        await client.save();
 
         // Build login URL (adjust the path to your actual login route)
         const base = process.env.APP_BASE_URL || "http://localhost:3000";
